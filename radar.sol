@@ -1,4 +1,4 @@
-pragma solidity ^0.4.11;
+pragma solidity ^0.4.24;
 
 // wei to ether: 1000000000000000000
 
@@ -7,17 +7,21 @@ contract RegistraInfracao {
         string local;
         string descricao;
         uint256 timestamp;
-        address emissor;
     }
     Infracao infracao;
+    SistemaControle sistema;
     
-    constructor(string _local, string _descricao, address system) public payable {
-        infracao.emissor = msg.sender;
+    constructor(address system) public {
+        sistema = SistemaControle(system);
+    }
+    
+    function novaInfracao(string _local, string _descricao) public {
         infracao.local = _local;
         infracao.descricao = _descricao;
         infracao.timestamp = now;
-        
-        SistemaControle sistema = SistemaControle(system);
+    }
+    
+    function enviaInfracao() public {
         sistema.infracaoParaAutuacao(infracao.local, infracao.descricao, infracao.timestamp);
     }
 }
@@ -28,7 +32,7 @@ contract SistemaControle {
         string endereco;
         bool permissao;
     }
-    struct Infracao {
+    struct Autuacao {
         string local;
         string descricao;
         uint256 timestamp;
@@ -45,13 +49,13 @@ contract SistemaControle {
         bool ativa;
     }
     mapping(address=>Radar) radar_registrado;
-    Infracao[] autuacoes;
+    Autuacao autuacao;
+    Multa multa;
+    Autuacao[] autuacoes;
     Multa[] multas;
-    uint n_autuacoes = 0;
-    uint n_multas = 0;
     address proprietario_sistema = msg.sender;
     
-    constructor() public payable {
+    constructor() public {
         proprietario_sistema = msg.sender;
     }
     
@@ -60,8 +64,8 @@ contract SistemaControle {
         _;
     }
     
-    modifier onlyRegisteredRadar() {
-        require(radar_registrado[msg.sender].permissao);
+    modifier onlyRegisteredRadar(address _sender) {
+        require(radar_registrado[_sender].permissao);
         _;
     }
     
@@ -76,34 +80,34 @@ contract SistemaControle {
         radar_registrado[owner_radar].permissao = true;
     }
     
-    function infracaoParaAutuacao(string local, string descricao, uint256 timestamp) public onlyRegisteredRadar payable {
-        autuacoes[n_autuacoes].local = local;
-        autuacoes[n_autuacoes].descricao = descricao;
-        autuacoes[n_autuacoes].timestamp = timestamp;
-        autuacoes[n_autuacoes].emissor = msg.sender;
-        autuacoes[n_autuacoes].anulada = false;
+    function infracaoParaAutuacao(string _local, string _descricao, uint256 _timestamp) public onlyRegisteredRadar(msg.sender) {
+        autuacao.local = _local;
+        autuacao.descricao = _descricao;
+        autuacao.timestamp = _timestamp;
+        autuacao.emissor = msg.sender;
+        autuacao.anulada = false;
         if(multaComAvaria()){ // Verifica avarias na infracao
-            autuacoes[n_autuacoes].anulada = true;
+            autuacao.anulada = true;
         }
-        n_autuacoes = n_autuacoes + 1;
+        autuacoes.push(autuacao);
     }
     
     function emitirNotificacoes() public onlyOwner{
         for(uint256 i = 0; i < autuacoes.length; i++){
            if(now - autuacoes[i].timestamp < uint256(2592000)) { // 2592000 = 30 dias em timestamp
                 if(!autuacoes[i].anulada){ // Verifica se a autucao não foi anulada por causa de avarias.
-                    multas[n_multas].local = autuacoes[i].local;
-                    multas[n_multas].descricao = autuacoes[i].descricao;
-                    multas[n_multas].timestamp = autuacoes[i].timestamp;
-                    multas[n_multas].emissor = autuacoes[i].emissor;
-                    multas[n_multas].notificada = true;
-                    multas[n_multas].data_notificacao = now;
-                    multas[n_multas].ativa = false;
-                    n_multas = n_multas + 1;
+                    multa.local = autuacoes[i].local;
+                    multa.descricao = autuacoes[i].descricao;
+                    multa.timestamp = autuacoes[i].timestamp;
+                    multa.emissor = autuacoes[i].emissor;
+                    multa.notificada = true;
+                    multa.data_notificacao = now;
+                    multa.ativa = false;
+                    multas.push(multa);
                 }
            }
         }
-        n_autuacoes = 0;
+        autuacoes.length = 0;
     }
     
     function notificacaoParaMulta() public onlyOwner{
